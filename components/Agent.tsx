@@ -63,6 +63,9 @@ const Agent = ({
 
     const onError = (error: Error) => {
       console.log("Error:", error);
+      if (error.message.includes("ejection")) {
+        setCallStatus(CallStatus.FINISHED);
+      }
     };
 
     vapi.on("call-start", onCallStart);

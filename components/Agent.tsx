@@ -36,6 +36,7 @@ const Agent = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [lastMessage, setLastMessage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [currentInterviewId, setCurrentInterviewId] = useState<string | undefined>(interviewId);
 
   useEffect(() => {
     const onCallStart = () => {
@@ -64,17 +65,33 @@ const Agent = ({
       setIsSpeaking(false);
     };
 
-    const onError = (error: Error) => {
+    const onError = async (error: Error) => {
       console.log("Error:", error);
       if (error.message.includes("ejection")) {
         setErrorMessage("Connection lost. Please try again.");
         setCallStatus(CallStatus.ERROR);
-        // If we have messages, try to generate feedback
-        if (messages.length > 0) {
-          setTimeout(() => {
-            setCallStatus(CallStatus.FINISHED);
-          }, 2000);
+
+        // If we have messages and an interview ID, try to generate feedback
+        if (messages.length > 0 && currentInterviewId) {
+          try {
+            const { success } = await createFeedback({
+              interviewId: currentInterviewId,
+              userId: userId!,
+              transcript: messages,
+              feedbackId,
+            });
+
+            if (success) {
+              router.push(`/interview/${currentInterviewId}/feedback`);
+            } else {
+              router.push("/");
+            }
+          } catch (feedbackError) {
+            console.error("Error generating feedback:", feedbackError);
+            router.push("/");
+          }
         } else {
+          // If no messages or no interview ID, just redirect to home
           setTimeout(() => {
             router.push("/");
           }, 2000);
@@ -97,7 +114,7 @@ const Agent = ({
       vapi.off("speech-end", onSpeechEnd);
       vapi.off("error", onError);
     };
-  }, [messages, router]);
+  }, [messages, router, currentInterviewId, userId, feedbackId]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -108,14 +125,14 @@ const Agent = ({
       console.log("handleGenerateFeedback");
 
       const { success, feedbackId: id } = await createFeedback({
-        interviewId: interviewId!,
+        interviewId: currentInterviewId!,
         userId: userId!,
         transcript: messages,
         feedbackId,
       });
 
       if (success && id) {
-        router.push(`/interview/${interviewId}/feedback`);
+        router.push(`/interview/${currentInterviewId}/feedback`);
       } else {
         console.log("Error saving feedback");
         router.push("/");
@@ -129,7 +146,7 @@ const Agent = ({
         handleGenerateFeedback(messages);
       }
     }
-  }, [messages, callStatus, feedbackId, interviewId, router, type, userId]);
+  }, [messages, callStatus, feedbackId, currentInterviewId, router, type, userId]);
 
   const handleCall = async () => {
     try {
@@ -157,6 +174,9 @@ const Agent = ({
         if (!data.success) {
           throw new Error(data.error || "Failed to create interview");
         }
+
+        // Store the interview ID
+        setCurrentInterviewId(data.interviewId);
 
         // Then start the Vapi call with the interview ID
         await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {

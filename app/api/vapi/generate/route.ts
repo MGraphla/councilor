@@ -8,6 +8,8 @@ export async function POST(request: Request) {
   const { type, role, level, techstack, amount, userid } = await request.json();
 
   try {
+    console.log("Generating interview with params:", { type, role, level, techstack, amount, userid });
+
     const { text: questions } = await generateText({
       model: google("gemini-2.0-flash-001"),
       prompt: `Prepare questions for a job interview.
@@ -25,6 +27,8 @@ export async function POST(request: Request) {
     `,
     });
 
+    console.log("Generated questions:", questions);
+
     const interview = {
       role: role,
       type: type,
@@ -37,12 +41,27 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    await db.collection("interviews").add(interview);
+    console.log("Saving interview to Firebase:", interview);
 
-    return Response.json({ success: true }, { status: 200 });
+    const docRef = await db.collection("interviews").add(interview);
+    console.log("Interview saved with ID:", docRef.id);
+
+    // Verify the document was created
+    const savedDoc = await docRef.get();
+    if (!savedDoc.exists) {
+      throw new Error("Failed to verify interview creation");
+    }
+
+    return Response.json({ 
+      success: true, 
+      interviewId: docRef.id 
+    }, { status: 200 });
   } catch (error) {
-    console.error("Error:", error);
-    return Response.json({ success: false, error: error }, { status: 500 });
+    console.error("Error creating interview:", error);
+    return Response.json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    }, { status: 500 });
   }
 }
 
